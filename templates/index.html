@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block body %}
+  <main id="top" class="page-shell">
+    <section class="hero section-pad">
+      <div class="hero-copy">
+        <p class="eyebrow">Coastal weekend invitation</p>
+        <h1>{{ content.event_name }}</h1>
+        <p class="lede">{{ content.tagline }}</p>
+        <div class="hero-meta">
+          <span>{{ content.event_date }}</span>
+          <span>{{ content.location }}</span>
+        </div>
+        <div class="hero-actions">
+          <a href="#itinerary" class="button button-solid">See the weekend</a>
+          <a href="#rsvp" class="button button-outline">RSVP now</a>
+        </div>
+      </div>
+      <div class="hero-card">
+        <div class="shell-badge" aria-hidden="true"></div>
+        <p class="card-kicker">Weekend notes</p>
+        <div class="stat-grid">
+          {% for stat in content.hero_stats %}
+            <article class="stat-tile">
+              <span>{{ stat.label }}</span>
+              <strong>{{ stat.value }}</strong>
+            </article>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section id="itinerary" class="section-pad section-soft">
+      <div class="section-heading">
+        <p class="eyebrow">Weekend itinerary</p>
+        <h2>Everything planned, with enough space to drift.</h2>
+      </div>
+      <div class="timeline-grid">
+        {% for day in content.itinerary %}
+          <article class="panel timeline-card reveal-on-scroll">
+            <p class="timeline-day">{{ day.day }}</p>
+            <h3>{{ day.title }}</h3>
+            <ul>
+              {% for item in day["items"] %}
+                <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section id="style-guide" class="section-pad split-layout">
+      <div>
+        <div class="section-heading align-left">
+          <p class="eyebrow">Packing list</p>
+          <h2>Bring pieces that feel easy, light, and beach-ready.</h2>
+        </div>
+        <ul class="check-list panel reveal-on-scroll">
+          {% for item in content.packing_list %}
+            <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div>
+        <div class="section-heading align-left">
+          <p class="eyebrow">Outfit inspiration</p>
+          <h2>Soft structure, sea-washed colors, and a little movement.</h2>
+        </div>
+        <div class="stacked-panels">
+          {% for outfit in content.outfit_notes %}
+            <article class="panel reveal-on-scroll">
+              <h3>{{ outfit.title }}</h3>
+              <p>{{ outfit.copy }}</p>
+            </article>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section id="stay" class="section-pad section-soft">
+      <div class="section-heading">
+        <p class="eyebrow">Stay details</p>
+        <h2>Where to arrive, unwind, and settle into the shoreline.</h2>
+      </div>
+      <div class="detail-grid">
+        <article class="panel reveal-on-scroll">
+          <p class="card-kicker">Hotel</p>
+          <h3>{{ content.hotel.name }}</h3>
+          <p>{{ content.hotel.address }}</p>
+          <ul>
+            {% for item in content.hotel.details %}
+              <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </article>
+        <article class="panel reveal-on-scroll">
+          <p class="card-kicker">Travel notes</p>
+          <ul>
+            {% for note in content.travel_notes %}
+              <li>{{ note }}</li>
+            {% endfor %}
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section-pad mood-strip" aria-label="Atmosphere notes">
+      <article class="mood-card reveal-on-scroll">
+        <span>Sea glass blue</span>
+        <strong>Cool, washed, and calm.</strong>
+      </article>
+      <article class="mood-card reveal-on-scroll">
+        <span>Shell cream</span>
+        <strong>Soft neutrals for linens and candlelight.</strong>
+      </article>
+      <article class="mood-card reveal-on-scroll">
+        <span>Driftwood sand</span>
+        <strong>Texture over shine, with natural woven accents.</strong>
+      </article>
+    </section>
+
+    <section id="rsvp" class="section-pad split-layout form-layout">
+      <div>
+        <div class="section-heading align-left">
+          <p class="eyebrow">RSVP and contact</p>
+          <h2>Let us know if you are joining the weekend.</h2>
+        </div>
+        <p class="form-copy">
+          Use the form for attendance, dietary notes, or travel timing. This starter saves nothing permanently yet,
+          but it is wired for real submissions once you connect email or storage.
+        </p>
+      </div>
+      <form class="panel rsvp-form reveal-on-scroll" method="post" action="{{ url_for('rsvp') }}">
+        <label>
+          Name
+          <input type="text" name="name" placeholder="Your name" required>
+        </label>
+        <label>
+          Email
+          <input type="email" name="email" placeholder="name@example.com" required>
+        </label>
+        <label>
+          Party size
+          <select name="party_size">
+            <option value="1">1 guest</option>
+            <option value="2">2 guests</option>
+            <option value="3">3 guests</option>
+            <option value="4">4 guests</option>
+          </select>
+        </label>
+        <label>
+          Notes
+          <textarea name="note" rows="4" placeholder="Dietary notes, arrival timing, or questions"></textarea>
+        </label>
+        <button class="button button-solid" type="submit">Send RSVP</button>
+      </form>
+    </section>
+  </main>
+{% endblock %}
