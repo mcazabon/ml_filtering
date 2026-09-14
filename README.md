@@ -119,6 +119,16 @@ For the default input `C:\temp\extracted_contact_data.csv`, run:
 python alias_filter.py
 ```
 
+Ollama is optional and is called only for aliases whose rule/ML score is close to the threshold. Start Ollama, pull a local model, and opt in with:
+
+```powershell
+ollama serve
+ollama pull llama3.2
+python alias_filter.py --ollama-model llama3.2
+```
+
+If Ollama is unavailable or returns invalid JSON, the existing rule/ML decision is retained.
+
 This creates `C:\temp\extracted_contact_data_cleaned_YYYYMMDD_HHMMSS.csv`. To use a different input, pass it as the first argument:
 
 ```powershell

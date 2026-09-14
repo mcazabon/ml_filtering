@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import re
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 from datetime import datetime
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -20,6 +23,7 @@ EMAIL_FORMAT = re.compile(
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
 )
 EXCLUDED_ALIAS_TYPES = {"filter1", "filter2", "filter3"}
+OLLAMA_AMBIGUITY_BAND = 0.12
 
 
 class AliasLearningModel:
@@ -61,6 +65,37 @@ class AliasLearningModel:
             self.fitted = True
         else:
             self.classifier.partial_fit(features, [label])
+
+
+class OllamaReviewer:
+    """Optional local reviewer used only for scores near the decision threshold."""
+
+    def __init__(self, model: str, endpoint: str = "http://127.0.0.1:11434/api/generate") -> None:
+        self.model = model
+        self.endpoint = endpoint
+
+    def review(self, alias: str, row: dict[str, str], rule_score: float, threshold: float) -> tuple[bool, str] | None:
+        prompt = (
+            "Classify whether this alias belongs to the same person as the contact. "
+            "Return JSON only: {\"match\": true|false, \"reason\": \"short reason\"}.\n"
+            f"First name: {row.get('First_Name', '')}\n"
+            f"Last name: {row.get('Last_Name', '')}\n"
+            f"Primary email: {row.get('Email', '')}\n"
+            f"Alias: {alias}\n"
+            f"Rule score: {rule_score:.4f}\n"
+            f"Decision threshold: {threshold:.4f}"
+        )
+        payload = json.dumps({"model": self.model, "prompt": prompt, "stream": False}).encode("utf-8")
+        try:
+            request = Request(self.endpoint, data=payload, headers={"Content-Type": "application/json"})
+            with urlopen(request, timeout=10) as response:
+                response_data = json.loads(response.read().decode("utf-8"))
+            result = json.loads(response_data.get("response", ""))
+            if not isinstance(result.get("match"), bool):
+                return None
+            return result["match"], str(result.get("reason", "Ollama review"))
+        except (OSError, URLError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+            return None
 
 
 def split_aliases(value: str) -> list[str]:
@@ -148,7 +183,10 @@ def score_alias(alias: str, row: dict[str, str]) -> tuple[float, str]:
 
 
 def iter_decisions(
-    rows: Iterable[dict[str, str]], threshold: float, learner: AliasLearningModel | None = None
+    rows: Iterable[dict[str, str]],
+    threshold: float,
+    learner: AliasLearningModel | None = None,
+    ollama: OllamaReviewer | None = None,
 ) -> Iterable[dict[str, str]]:
     for row_number, row in enumerate(rows, start=2):
         aliases = split_aliases(row.get("Aliases", ""))
@@ -191,6 +229,13 @@ def iter_decisions(
                 learned_score = (score * 0.7) + (model_score * 0.3)
                 score = max(score, learned_score)
                 reason += f"; learned model={model_score:.2f}"
+            ollama_review = None
+            if ollama and abs(score - threshold) <= OLLAMA_AMBIGUITY_BAND:
+                ollama_review = ollama.review(alias, row, score, threshold)
+            if ollama_review is not None:
+                ollama_match, ollama_reason = ollama_review
+                score = max(threshold, score) if ollama_match else min(threshold - 0.001, score)
+                reason += f"; Ollama: {ollama_reason}"
             if learner and score >= 0.72:
                 learner.learn(alias, row, 1)
             elif learner and score <= 0.20:
@@ -214,6 +259,7 @@ def filter_csv(
     suspicious_path: Path,
     invalid_path: Path,
     threshold: float,
+    ollama: OllamaReviewer | None = None,
 ) -> tuple[int, int, int]:
     with input_path.open("r", newline="", encoding="utf-8-sig") as source:
         reader = csv.DictReader(source)
@@ -232,7 +278,7 @@ def filter_csv(
             invalid_writer.writeheader()
             match_count = suspicious_count = invalid_count = 0
             learner = AliasLearningModel()
-            for decision in iter_decisions(reader, threshold, learner):
+            for decision in iter_decisions(reader, threshold, learner, ollama):
                 if decision["status"] == "invalid_format":
                     invalid_writer.writerow(decision)
                     invalid_count += 1
@@ -245,7 +291,9 @@ def filter_csv(
     return match_count, suspicious_count, invalid_count
 
 
-def write_cleaned_csv(input_path: Path, cleaned_path: Path, threshold: float) -> int:
+def write_cleaned_csv(
+    input_path: Path, cleaned_path: Path, threshold: float, ollama: OllamaReviewer | None = None
+) -> int:
     """Write one original contact row with only accepted aliases retained."""
     with input_path.open("r", newline="", encoding="utf-8-sig") as source:
         reader = csv.DictReader(source)
@@ -260,7 +308,7 @@ def write_cleaned_csv(input_path: Path, cleaned_path: Path, threshold: float) ->
             for row in reader:
                 accepted_aliases = [
                     decision["alias"]
-                    for decision in iter_decisions([row], threshold, learner)
+                    for decision in iter_decisions([row], threshold, learner, ollama)
                     if decision["status"] in {"match", "excluded_type"}
                 ]
                 cleaned_row = {field: row.get(field) or "" for field in reader.fieldnames}
@@ -278,6 +326,8 @@ def main() -> None:
     parser.add_argument("--suspicious", type=Path, help="Suspicious alias audit CSV.")
     parser.add_argument("--invalid", type=Path, help="Invalid email alias audit CSV.")
     parser.add_argument("--threshold", type=float, default=0.62, help="Minimum score to classify as a match (default: 0.62).")
+    parser.add_argument("--ollama-model", help="Optional local Ollama model for ambiguous aliases only, e.g. llama3.2.")
+    parser.add_argument("--ollama-url", default="http://127.0.0.1:11434/api/generate", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not 0 <= args.threshold <= 1:
         parser.error("--threshold must be between 0 and 1")
@@ -288,8 +338,9 @@ def main() -> None:
     matches_path = args.matches or output_folder / f"{output_stem}_matches_{timestamp}.csv"
     suspicious_path = args.suspicious or output_folder / f"{output_stem}_suspicious_{timestamp}.csv"
     invalid_path = args.invalid or output_folder / f"{output_stem}_invalid_{timestamp}.csv"
-    matched, suspicious, invalid = filter_csv(args.input_csv, matches_path, suspicious_path, invalid_path, args.threshold)
-    row_count = write_cleaned_csv(args.input_csv, cleaned_path, args.threshold)
+    ollama = OllamaReviewer(args.ollama_model, args.ollama_url) if args.ollama_model else None
+    matched, suspicious, invalid = filter_csv(args.input_csv, matches_path, suspicious_path, invalid_path, args.threshold, ollama)
+    row_count = write_cleaned_csv(args.input_csv, cleaned_path, args.threshold, ollama)
     print(f"Wrote cleaned {row_count} contact rows to {cleaned_path}")
     print(f"Wrote {matched} matches to {matches_path}")
     print(f"Wrote {suspicious} suspicious aliases to {suspicious_path}")

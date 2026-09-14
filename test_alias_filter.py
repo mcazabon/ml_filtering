@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 from alias_filter import (
     EXCLUDED_ALIAS_TYPES,
     AliasLearningModel,
+    OllamaReviewer,
     is_valid_email_alias,
     iter_decisions,
     score_alias,
@@ -124,6 +125,21 @@ class AliasFilterTests(unittest.TestCase):
         aliases = f"{DIRECTORY_ALIAS_TYPE}:random-id; {DIRECTORY_ALIAS_TYPE}:lovelaceada"
         decisions = list(iter_decisions([generic_row(aliases)], threshold=0.62, learner=learner))
         self.assertEqual([decision["status"] for decision in decisions], ["suspicious", "match"])
+
+    def test_ollama_is_used_only_for_ambiguous_scores(self) -> None:
+        class FakeReviewer:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def review(self, alias: str, row: dict[str, str], rule_score: float, threshold: float) -> tuple[bool, str]:
+                self.calls += 1
+                return True, "synthetic review"
+
+        reviewer = FakeReviewer()
+        row = generic_row(f"{DIRECTORY_ALIAS_TYPE}:lovelaceada; {DIRECTORY_ALIAS_TYPE}:random-id")
+        decisions = list(iter_decisions([row], threshold=0.62, ollama=reviewer))
+        self.assertEqual(reviewer.calls, 1)
+        self.assertEqual(decisions[0]["status"], "match")
 
 
 if __name__ == "__main__":
