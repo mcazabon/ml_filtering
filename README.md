@@ -111,7 +111,11 @@ Before the first run, install or verify all dependencies with the preflight chec
 & .\.venv\Scripts\python.exe .\preflight.py
 ```
 
-The preflight uses the active interpreter, installs missing packages from `requirements.txt`, and verifies that imports work. Run it again after changing environments or dependencies.
+The preflight uses the active interpreter, installs missing packages from `requirements.txt`, verifies imports, starts the local Ollama service, downloads the default `llama3.2` model, and verifies the model API. If Ollama is not installed, install it from [ollama.com/download/windows](https://ollama.com/download/windows) and rerun preflight. Use `--skip-ollama` when only Python dependencies are needed.
+
+```powershell
+& .\.venv\Scripts\python.exe .\preflight.py --ollama-model llama3.2
+```
 
 For the default input `C:\temp\extracted_contact_data.csv`, run:
 
